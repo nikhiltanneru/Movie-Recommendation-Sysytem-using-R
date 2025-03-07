@@ -1,0 +1,172 @@
+```{r}
+#install.packages("DT")
+#install.packages("shinyWidgets")
+library(shiny)
+library(shinyWidgets)
+library(DT)
+
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(shiny)
+library(FNN)
+library(data.table)
+library(DT) # Load DT for renderDT
+
+# Load pre-saved data
+merged_data <- readRDS("/Users/lakshmirohithreddyannapureddy/Downloads/merged_data_with_clusters.rds")
+clustering_features_scaled <- readRDS("/Users/lakshmirohithreddyannapureddy/Downloads/clustering_features_scaled.rds")
+
+```
+
+```{r}
+# Recommendation function with genre filtering and sorting
+recommend_from_cluster_nn <- function(input_movie_title, num_recommendations = 5, genre_filter = NULL) {
+  # Get the movie ID for the input title
+  input_movie_id <- merged_data[title == input_movie_title, movieId]
+  if (length(input_movie_id) == 0) stop("Movie title not found.")
+  
+  # Identify the cluster of the input movie
+  input_cluster <- merged_data[movieId == input_movie_id, Cluster]
+  if (length(input_cluster) == 0) stop("Cluster not found.")
+  
+  # Filter movies from the same cluster
+  cluster_movies <- merged_data[Cluster == input_cluster]
+  
+  # Apply genre filtering if specified
+  if (!is.null(genre_filter) && genre_filter != "All") {
+    cluster_movies <- cluster_movies[get(genre_filter) == 1]
+    if (nrow(cluster_movies) == 0) stop("No movies found in the specified genre.")
+  }
+  
+  # Extract feature matrix for clustering
+  cluster_features <- cluster_movies[, .(
+    Action, Adventure, Animation, Children, Comedy, Crime,
+    Documentary, Drama, Fantasy, `Film-Noir`, Horror, IMAX,
+    Musical, Mystery, Romance, `Sci-Fi`, Thriller, War, Western,
+    rating
+  )]
+  
+  # Find nearest neighbors
+  input_index <- which(cluster_movies$title == input_movie_title)
+  neighbors <- get.knnx(as.matrix(cluster_features), as.matrix(cluster_features[input_index, , drop = FALSE]), k = num_recommendations + 1)
+  
+  # Exclude the input movie from recommendations
+  recommended_indices <- neighbors$nn.index[1, -1]
+  recommendations <- cluster_movies[recommended_indices, .(title, rating)]
+  
+  # Sort recommendations by rating in descending order
+  recommendations <- recommendations[order(-rating)]
+  
+  # Limit to the specified number of recommendations
+  return(head(recommendations, num_recommendations))
+}
+
+
+```
+
+
+
+```{r}
+# Extract unique genres dynamically from merged_data
+unique_genres <- names(merged_data)[
+  names(merged_data) %in% c(
+    "Action", "Adventure", "Animation", "Children", "Comedy", "Crime",
+    "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "IMAX",
+    "Musical", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western"
+  )
+]
+genre_choices <- c("All", unique_genres)
+
+```
+
+
+```{r}
+# UI with custom background image
+ui <- fluidPage(
+  # Add the custom background image
+  setBackgroundImage(src = "background.png"),  # Reference your image in the www folder
+  
+  titlePanel("Movie Recommendation System"),
+  sidebarLayout(
+    sidebarPanel(
+      selectizeInput("movie_title", "Select Movie Title:", 
+                     choices = merged_data$title, 
+                     options = list(placeholder = 'Type to search...')),
+      sliderInput("num_recommendations", "Number of Recommendations:", min = 1, max = 10, value = 5),
+      selectInput("genre_filter", "Filter by Genre:", 
+                  choices = genre_choices),
+      actionButton("recommend", "Get Recommendations"),
+      actionButton("reset", "Reset"),
+      helpText("Select a movie, specify the number of recommendations, and optionally filter by genre.")
+    ),
+    mainPanel(
+      h4("Recommendations:"),
+      DTOutput("recommendations_table"),
+      verbatimTextOutput("error_message")
+    )
+  )
+)
+
+
+```
+
+
+```{r}
+# Server logic
+server <- function(input, output, session) {
+  # Reset inputs
+  observeEvent(input$reset, {
+    updateSelectizeInput(session, "movie_title", selected = "")
+    updateSliderInput(session, "num_recommendations", value = 5)
+    updateSelectInput(session, "genre_filter", selected = "All")
+    output$recommendations_table <- renderDT(NULL)
+    output$error_message <- renderText(NULL)
+  })
+
+  # Reactive expression to get recommendations
+  recommendations <- eventReactive(input$recommend, {
+    req(input$movie_title, input$num_recommendations) # Ensure inputs are provided
+    
+    # Catch errors and return a message if something goes wrong
+    tryCatch({
+      recommend_from_cluster_nn(
+        input_movie_title = input$movie_title,
+        num_recommendations = input$num_recommendations,
+        genre_filter = input$genre_filter
+      )
+    }, error = function(e) {
+      data.table(Error = e$message)
+    })
+  })
+
+  # Render recommendations as a table
+  output$recommendations_table <- renderDT({
+    result <- recommendations()
+    if ("Error" %in% names(result)) {
+      return(NULL)
+    }
+    datatable(result, options = list(pageLength = 5, autoWidth = TRUE), rownames = FALSE)
+  })
+
+  # Render error messages if any
+  output$error_message <- renderText({
+    result <- recommendations()
+    if ("Error" %in% names(result)) {
+      return(result$Error)
+    }
+    NULL
+  })
+}
+
+```
+
+```{r}
+# Launch the Shiny app
+shinyApp(ui, server)
+
+```
+

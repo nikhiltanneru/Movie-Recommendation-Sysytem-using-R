@@ -1,0 +1,244 @@
+```{r}
+# Install required libraries if not already installed
+##install.packages("shiny")
+##install.packages("dplyr")
+##install.packages("textTinyR")
+##install.packages("ggplot2")
+
+# Load libraries
+library(shiny)
+library(dplyr)
+library(textTinyR)
+library(ggplot2)
+
+```
+
+```{r}
+# Load the datasets
+movies <- read.csv("/Users/lakshmirohithreddyannapureddy/Downloads/movie.csv")
+ratings <- read.csv("/Users/lakshmirohithreddyannapureddy/Downloads/rating.csv")
+
+# Inspect the datasets
+head(movies)  # Preview movie data
+
+```
+
+```{r}
+summary(movies)
+```
+
+```{r}
+head(ratings) # Preview ratings data
+```
+
+```{r}
+summary(ratings)
+```
+
+```{r}
+# Install tidyr if not already installed
+#install.packages("tidyr")
+
+# Load tidyr
+library(tidyr)
+
+```
+
+```{r}
+
+
+# Split genres into multiple rows
+movies_genres <- movies %>%
+  separate_rows(genres, sep = "\\|")
+
+# Create one-hot encoding for genres
+movies_onehot <- movies_genres %>%
+  mutate(value = 1) %>%
+  pivot_wider(names_from = genres, values_from = value, values_fill = 0)
+
+# Preview the one-hot encoded dataset
+head(movies_onehot)
+
+```
+
+```{r}
+# Merge ratings and one-hot encoded movies
+merged_data_final <- ratings %>%
+  inner_join(movies_onehot, by = "movieId")
+
+# Preview merged dataset
+head(merged_data_final)
+
+
+
+```
+
+```{r}
+
+library(dplyr)
+
+# Remove the timestamp column from merged_data_final
+merged_data_final <- merged_data_final %>%
+  select(-timestamp)
+
+# Preview the updated dataset
+head(merged_data_final)
+
+# Confirm that the timestamp column has been removed
+colnames(merged_data_final)
+
+
+```
+
+```{r}
+# Rename the data frame
+final_data <- merged_data_final
+
+# Save final_data as 'finaldata.csv' in the specified directory
+write.csv(final_data, "/Users/lakshmirohithreddyannapureddy/Downloads/finaldata.csv", row.names = FALSE)
+
+
+```
+
+
+```{r}
+
+# Calculate the mean presence of each genre
+genre_means <- final_data %>%
+  summarise(across(Adventure:`(no genres listed)`, mean)) %>%
+  pivot_longer(cols = everything(), names_to = "Genre", values_to = "Mean")
+
+# Create a bar plot
+ggplot(genre_means, aes(x = reorder(Genre, -Mean), y = Mean)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  coord_flip() +
+  labs(
+    title = "Genre Popularity in Movies",
+    x = "Genre",
+    y = "Mean Presence"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# Create a histogram of ratings
+ggplot(final_data, aes(x = rating)) +
+  geom_histogram(binwidth = 0.5, fill = "coral", color = "black") +
+  labs(
+    title = "Distribution of User Ratings",
+    x = "Rating",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+
+
+```{r}
+# Calculate the proportion of each genre
+genre_proportions <- final_data %>%
+  summarise(across(Adventure:`(no genres listed)`, ~ sum(.) / nrow(final_data))) %>%
+  pivot_longer(cols = everything(), names_to = "Genre", values_to = "Proportion")
+
+# Create a pie chart
+ggplot(genre_proportions, aes(x = "", y = Proportion, fill = Genre)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  labs(
+    title = "Proportion of Movies by Genre",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_void() +
+  theme(legend.position = "right")
+
+```
+
+
+```{r}
+library(ggplot2)
+
+# Calculate genre counts
+genre_counts <- final_data %>%
+  summarise(across(Adventure:`(no genres listed)`, sum)) %>%
+  pivot_longer(cols = everything(), names_to = "Genre", values_to = "Count")
+
+# Bar plot
+ggplot(genre_counts, aes(x = reorder(Genre, -Count), y = Count)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
+  labs(
+    title = "Genre Popularity in Movies",
+    x = "Genre",
+    y = "Number of Movies"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+```
+```{r}
+# Calculate average rating per movie
+top_movies <- final_data %>%
+  group_by(title) %>%
+  summarise(avg_rating = mean(rating)) %>%
+  arrange(desc(avg_rating)) %>%
+  head(10)
+
+# Bar plot
+ggplot(top_movies, aes(x = reorder(title, avg_rating), y = avg_rating)) +
+  geom_bar(stat = "identity", fill = "goldenrod", color = "black") +
+  coord_flip() +
+  labs(
+    title = "Top 10 Highest Rated Movies",
+    x = "Movie",
+    y = "Average Rating"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(reshape2)
+
+# Calculate correlation matrix
+genre_correlation <- final_data %>%
+  select(Adventure:`(no genres listed)`) %>%
+  cor()
+
+# Melt the correlation matrix for heatmap
+melted_correlation <- melt(genre_correlation)
+
+# Heatmap
+ggplot(melted_correlation, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  labs(
+    title = "Heatmap of Genre Correlation",
+    x = "Genre",
+    y = "Genre",
+    fill = "Correlation"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+# Density plot of ratings
+ggplot(final_data, aes(x = rating)) +
+  geom_density(fill = "purple", alpha = 0.4) +
+  labs(
+    title = "Density Plot of Ratings",
+    x = "Rating",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+```
+
